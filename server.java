@@ -1,90 +1,189 @@
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintWriter;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousServerSocketChannel;
+import java.nio.channels.AsynchronousSocketChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class server{
-    private File raiz = new File("./view");
-    private ServerSocket serv;
-    private ExecutorService pool = Executors.newFixedThreadPool(8);
+    private final Path root = Paths.get("view");
     public static void main(String[] args)  {
         new Thread(() -> new server().start(8080)).start();
+        // new server().start(8080);
     }
     public void start(int port) {
         try {
-            serv = new ServerSocket(port);
+            AsynchronousServerSocketChannel serv =
+                AsynchronousServerSocketChannel.open()
+                .bind(new InetSocketAddress(port));
+
             System.out.println("http://localhost:" + port);
             
-            while (true) {
-                Socket client = serv.accept();
-                pool.submit(() -> hend(client));
+           serv.accept(null, new CompletionHandler<AsynchronousSocketChannel,Void>() {
+
+            @Override
+            public void completed(AsynchronousSocketChannel client, Void att) {
+                serv.accept(null, this);
+                handle(client);
             }
+
+            @Override
+            public void failed(Throwable exc, Void att) {
+                exc.printStackTrace();
+            }
+        });
+
+        Thread.currentThread().join();
+}catch(Exception e){
+e.printStackTrace();
+}
+}
+
+
+private void handle(AsynchronousSocketChannel client) {
+    ByteBuffer buffer = ByteBuffer.allocate(2048);
+
+        client.read(buffer, null, new CompletionHandler<Integer,Void>() {
+            @Override
+            public void completed(Integer result, Void att) {
+                       try {
+                    if (result == -1) {
+                        close(client);
+                        return;
+                    }
+
+                    buffer.flip();
+                    String req = StandardCharsets.UTF_8.decode(buffer).toString();
+                    buffer.clear();
+
+                    String path = parsePath(req);
+                    boolean keepAlive = req.toLowerCase().contains("connection: keep-alive");
+
+                    Path file = root.resolve(path).normalize();
+
+                    if (!file.startsWith(root) || !Files.exists(file)) {
+                        send404(client, keepAlive);
+                        return;
+                    }
+
+                    sendFile(client, file, keepAlive);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    close(client);
+                }
+            }
+
+            @Override
+            public void failed(Throwable exc, Void att) {
+                close(client);
+            }
+        });
+    }
+
+    private String parsePath(String req) {
+        if (req == null) return "/index.html";
+        String[] parts = req.split(" ");
+        if (parts.length < 2) return "/index.html";
+        if (parts[1].equals("/")) return "index.html";
+        return parts[1].substring(1);
+    }
+
+    private void sendFile(AsynchronousSocketChannel client, Path file, boolean keepAlive) {
+        try {
+            String mime = Files.probeContentType(file);
+            if (mime == null) mime = "application/octet-stream";
+
+            long size = Files.size(file);
+
+            StringBuilder header = new StringBuilder()
+                    .append("HTTP/1.1 200 OK\r\n")
+                            .append("Content-Type: ").append(mime).append("\r\n")
+                            .append("Content-Length: ").append(size).append("\r\n")
+                            .append((keepAlive ? "Connection: keep-alive\r\n" : "Connection: close\r\n"))
+                            .append("\r\n");
+
+            ByteBuffer head = ByteBuffer.wrap(header.toString().getBytes());
+
+            client.write(head).get();
+
+            FileChannel fc = FileChannel.open(file);
+            ByteBuffer buffer = ByteBuffer.allocate(8192);
+
+            sendChunk(client, fc, buffer);
+
+            if (keepAlive) handle(client);
+            else close(client);
             
         } catch (Exception e) {
-            e.printStackTrace();
+            close(client);
         }
     }
-    public void hend(Socket serv){
-    BufferedReader in;
-    OutputStream out;
-    PrintWriter printWriter;
-    FileInputStream fileInputStream;
-    String requestLine;
-    try{
-        in = new BufferedReader(new InputStreamReader(serv.getInputStream()));
-        out = serv.getOutputStream();
-        printWriter = new PrintWriter(out, true);
-        requestLine = in.readLine();
 
-        if (requestLine==null) return;
-        String path = requestLine.split(" ")[1];
-        if (path.equals("/")) path = "/index.html";
+private void sendChunk(AsynchronousSocketChannel client, FileChannel fc, ByteBuffer buffer) {
+    try {
+        buffer.clear();
+        int bytesRead = fc.read(buffer);
 
-        File file = new File(raiz,path);
-        if (!file.getCanonicalPath().startsWith(raiz.getCanonicalPath())) {
-                send404(printWriter);
-                return;
-            }
-            if (!file.exists() || file.isDirectory()) {
-                send404(printWriter);
-                return;
-            }
-            String mini = Files.probeContentType(file.toPath());
-            StringBuilder type = new StringBuilder().append("Content-Type: ").append(mini!=null?mini:"application/octet-stream");
-            
-            printWriter.println("HTTP/1.1 200 OK");
-            printWriter.println(type.toString());
-            printWriter.println("Content-Length: " + file.length());
-            printWriter.println();
-            printWriter.flush();
-            
-            fileInputStream = new FileInputStream(file);
-            fileInputStream.transferTo(out);
-            out.flush();
-        }catch(Exception e){
-            e.printStackTrace();
-        }finally {
-            try {
-                serv.close();
-            }catch(Exception e){
+        if (bytesRead == -1) {
+            fc.close();
+            close(client);
+            return;
+        }
 
+        buffer.flip();
+
+        client.write(buffer, null, new CompletionHandler<Integer, Void>() {
+            @Override
+            public void completed(Integer result, Void att) {
+                sendChunk(client, fc, buffer);
             }
+
+            @Override
+            public void failed(Throwable exc, Void att) {
+                try { fc.close(); } catch (Exception ignored) {}
+                close(client);
+            }
+        });
+    } catch (Exception e) {
+        e.printStackTrace();
+        try { fc.close(); } catch (Exception ignored) {}
+        close(client);
+    }
+}
+
+
+
+     private void send404(AsynchronousSocketChannel client, boolean keepAlive) {
+        try {
+            String msg = "<h1>404 Not Found</h1>";
+            StringBuilder header = new StringBuilder()
+                    .append("HTTP/1.1 404 Not Found\r\n")
+                            .append("Content-Type: text/html\r\n")
+                            .append("Content-Length: ").append(msg.length()).append("\r\n")
+                            .append((keepAlive ? "Connection: keep-alive\r\n" : "Connection: close\r\n"))
+                            .append("\r\n")
+                            .append(msg);
+
+            ByteBuffer buf = ByteBuffer.wrap(header.toString().getBytes());
+
+            client.write(buf).get();
+
+            if (keepAlive)
+                handle(client);
+            else
+                close(client);
+
+        } catch (Exception e) {
+            close(client);
         }
     }
-    private void send404(PrintWriter writer) {
-        String page = "<h1>404 Not Found</h1>";
-        writer.println("HTTP/1.1 404 Not Found");
-        writer.println("Content-Type: text/html");
-        writer.println("Content-Length: " + page.length());
-        writer.println();
-        writer.println(page);
-        writer.flush();
+
+    private void close(AsynchronousSocketChannel client) {
+        try { client.close(); } catch (IOException ignored) {}
     }
 }
