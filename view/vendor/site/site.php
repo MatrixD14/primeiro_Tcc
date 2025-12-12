@@ -10,7 +10,7 @@ $login->protect();
     <title>site</title>
 </head>
 <body>
-    <a href="<?=$login->logout()?>">logout</a>
+    <a href="../../../controller/login/logout.php">logout</a>
     <h1>inicio do site</h1>
 </body>
 </html>

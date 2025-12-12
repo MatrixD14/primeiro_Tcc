@@ -19,31 +19,28 @@ class login{
     public function create_login(){
         $password=password_hash($this->senha,PASSWORD_DEFAULT);
         $tmg = $this->connect->prepare("insert into usuario(nome,email,senha)values(?,?,?)");
-        // $tmg = $this->connect->prepare("insert into admins(email,senha)values(?,?)");
-         $tmg->bind_param("ss",$this->email,$password);
+         $tmg->bind_param("sss",$this->nome,$this->email,$password);
         if(!$tmg->execute()) die("commad nao executado");
         $tmg->close();
     }
-    public function login(){
-        $tmg = $this->connect->prepare("select * from usuario where email=?");
+    public function login_UsrAdmin($table){
+        $tmg = $this->connect->prepare("select * from ".$table." where email=?");
         $tmg->bind_param("s",$this->email);
         if(!$tmg->execute())die("commad nao executado");
         $result=$tmg->get_result() or die("falha na execução do command ".$this->connect->connect_error);
         $tmg->close();
         return $result;
     }
-    public function login_admin(){
-        $tmg = $this->connect->prepare("select * from admins where email=?");
-        $tmg->bind_param("s",$this->email);
+    public function list_All($table){
+        $tmg = $this->connect->prepare("select * from ".$table);
         if(!$tmg->execute())die("commad nao executado");
-        $result=$tmg->get_result() or die("falha na execução do command ".$this->connect->connect_error);
-        $tmg->close();
-        return $result;
+        return $tmg->get_result();
     }
-    public function logout(){
-        if(!isset($_SESSION))session_start();
-        session_destroy();
-        return "../../index.html";
+    public function delete_usr($id){
+        $tmg=$this->connect->prepare("delete from usuario where id_usuario=?");
+        $tmg->bind_param("i",$id);
+        $tmg->execute();
+        $tmg->close();
     }
     public function protect(){
         if(!isset($_SESSION))session_start();

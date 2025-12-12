@@ -15,13 +15,12 @@ if(isset($nome)|| isset($Email)||isset($PassWord)){
     else if(strlen($PassWord)==0)log_error("preencha o campo senha");
     else{
         $login= new login($nome,$Email,$PassWord);
-        if($login->login()->nuw_rows >0){
+        if($login->login_UsrAdmin("usuario")->nuw_rows > 0){
             log_error("conta já existente");
         }else if($login->create_login()){
-            header('location: ../../view/index.html');
+            header('location: ../../view/vendor/create_login/create_login.php');
             exit;
         }else log_error("erro ao create conta");
-        $login->close();
-        
+        $login->close();      
     }
 }

@@ -1,0 +1,37 @@
+* {
+  margin: 0;
+  padding: 0;
+}
+body {
+  display: flex;
+  justify-content: center;
+  /* align-items: center; */
+  background-color: black;
+}
+.center {
+  background-color: #fff;
+  color: #000;
+  padding: 0 20px 10px 20px;
+  margin: 0 20px 10px 20px;
+  height: 100vh;
+}
+.btn-delete,
+.btn-edite {
+  color: #fff;
+  text-decoration: none;
+  &:hover {
+    background-color: yellow;
+    color: #000;
+  }
+}
+.btn-delete {
+  background-color: red;
+}
+.btn-edite {
+  background-color: green;
+}
+
+.info-dado,
+td a {
+  padding: 0 10px 0 10px;
+}

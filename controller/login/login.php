@@ -4,7 +4,7 @@ include_once "../../model/login.php";
 function log_error($log){
     if(!isset($_SESSION))session_start();
     $_SESSION["log_create"]=$log;
-    header('location: ../../view/index/');
+    header('location: ../../view/index.html');
     exit;
 }
 $Email= $_POST["email"];
@@ -14,8 +14,10 @@ if(isset($Email,$PassWord)){
     else if(strlen($PassWord)==0) log_error("preenchao campo senha");
     else{
         $login= new login("",$Email,$PassWord);
-        if($login->login()->num_rows===1){
-            $user=$login->login()->fetch_assoc();
+        $resultUsr=$login->login_UsrAdmin("usuario");
+        $resultAdmin=$login->login_UsrAdmin("admins");
+        if($resultUsr->num_rows===1){
+            $user=$resultUsr->fetch_assoc();
             if(password_verify($PassWord,$user['senha'])){
                 if(!isset($_SESSION)) session_start();
                 $_SESSION["id"]=$user["id_usuario"];
@@ -23,8 +25,9 @@ if(isset($Email,$PassWord)){
                 header('location: ../../../../view/vendor/site/site.php');
                 exit;
             }else log_error("senha incorreta");
-        }elseif($login->login_admin()->num_rows===1){
-            $admin=$login->login_admin()->fetch_assoc();
+        }
+        if($resultAdmin->num_rows===1){
+            $admin=$resultAdmin->fetch_assoc();
             if(password_verify($PassWord,$admin['senha'])){
                 if(!isset($_SESSION)) session_start();
                 $_SESSION["id"]= $admin['id_admin'];
